@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Regex Debugger — пошаговая отладка регулярных выражений</title>
+<style>
+:root{
+  --bg:#0f1115; --bg2:#161a21; --bg3:#1d222b; --bg4:#262c37;
+  --border:#2a313d; --border2:#39414f;
+  --text:#e4e7ee; --muted:#8b94a5; --muted2:#6b7382;
+  --accent:#5b9dff; --accent2:#3b82f6;
+  --green:#34d399; --red:#f87171; --yellow:#fbbf24; --purple:#a78bfa; --orange:#fb923c;
+  --shadow:0 2px 8px rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:13px; line-height:1.5;
+  overflow:hidden;
+}
+button{font-family:inherit; cursor:pointer}
+input,textarea{font-family:inherit}
+
+/* Layout */
+.app{display:grid; grid-template-rows:auto 1fr; height:100vh}
+.topbar{
+  display:flex; align-items:center; gap:14px;
+  padding:10px 16px; background:var(--bg2);
+  border-bottom:1px solid var(--border);
+}
+.brand{display:flex; align-items:center; gap:10px; font-weight:600; font-size:15px; white-space:nowrap}
+.brand .logo{
+  width:28px; height:28px; border-radius:7px;
+  background:linear-gradient(135deg,var(--accent),var(--purple));
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; color:#fff;
+}
+.brand .sub{font-weight:400; color:var(--muted); font-size:12px}
+.topbar .spacer{flex:1}
+.topbar .examples-wrap{position:relative}
+.examples-btn{
+  background:var(--bg3); border:1px solid var(--border2); color:var(--text);
+  padding:6px 12px; border-radius:6px; font-size:12px;
+}
+.examples-btn:hover{background:var(--bg4)}
+.examples-menu{
+  display:none; position:absolute; right:0; top:calc(100% + 4px);
+  background:var(--bg3); border:1px solid var(--border2); border-radius:8px;
+  min-width:280px; box-shadow:var(--shadow); z-index:50; padding:6px;
+  max-height:400px; overflow:auto;
+}
+.examples-menu.open{display:block}
+.examples-menu .item{
+  padding:7px 10px; border-radius:5px; cursor:pointer; font-size:12px;
+}
+.examples-menu .item:hover{background:var(--bg4)}
+.examples-menu .item .t{color:var(--accent); font-family:monospace}
+.examples-menu .item .d{color:var(--muted); font-size:11px; margin-top:2px}
+
+.main{display:grid; grid-template-columns:1fr 1fr; min-height:0}
+.pane{display:flex; flex-direction:column; min-height:0; min-width:0}
+.pane.left{border-right:1px solid var(--border)}
+.pane-head{
+  padding:8px 14px; background:var(--bg2);
+  border-bottom:1px solid var(--border); font-size:11px; font-weight:600;
+  color:var(--muted); text-transform:uppercase; letter-spacing:.06em;
+  display:flex; align-items:center; gap:10px;
+}
+.pane-head .pill{
+  background:var(--bg4); color:var(--text); padding:1px 8px; border-radius:10px;
+  font-size:10px; font-weight:600; text-transform:none; letter-spacing:0;
+}
+.pane-body{flex:1; overflow:auto; padding:12px 14px; min-height:0}
+
+/* Inputs */
+.field{margin-bottom:12px}
+.field label{display:block; font-size:11px; color:var(--muted); margin-bottom:4px; font-weight:600; text-transform:uppercase; letter-spacing:.05em}
+.pattern-row{display:flex; gap:8px; align-items:stretch}
+.pattern-input{
+  flex:1; background:var(--bg3); border:1px solid var(--border2); border-radius:7px;
+  padding:10px 12px; color:var(--text); font-size:14px; font-family:"SF Mono",Menlo,Consolas,monospace;
+  outline:none; min-width:0; resize:vertical; min-height:44px; max-height:260px;
+  line-height:1.6; white-space:pre-wrap; word-break:break-all;
+}
+.pattern-input:focus{border-color:var(--accent); box-shadow:0 0 0 3px rgba(91,157,255,.15)}
+.pattern-input.error{border-color:var(--red); box-shadow:0 0 0 3px rgba(248,113,113,.15)}
+.flags-input{
+  width:90px; background:var(--bg3); border:1px solid var(--border2); border-radius:7px;
+  padding:10px 12px; color:var(--text); font-size:14px; font-family:"SF Mono",Menlo,Consolas,monospace;
+  outline:none; text-align:center; align-self:stretch;
+}
+.flags-input:focus{border-color:var(--accent)}
+.test-input{
+  width:100%; background:var(--bg3); border:1px solid var(--border2); border-radius:7px;
+  padding:10px 12px; color:var(--text); font-size:13px; font-family:"SF Mono",Menlo,Consolas,monospace;
+  outline:none; resize:vertical; min-height:90px; line-height:1.6;
+}
+.test-input:focus{border-color:var(--accent)}
+.error-msg{
+  background:rgba(248,113,113,.1); border:1px solid var(--red); color:var(--red);
+  padding:6px 10px; border-radius:6px; font-size:12px; margin-top:6px; font-family:monospace;
+}
+
+/* Pattern visualization */
+.pattern-viz{
+  background:var(--bg3); border:1px solid var(--border2); border-radius:7px;
+  padding:10px 12px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:14px;
+  line-height:1.8; word-break:break-all; min-height:42px; white-space:pre-wrap;
+}
+.tok{padding:1px 0; border-radius:3px; position:relative; transition:background .12s}
+.tok.active{background:rgba(91,157,255,.25); box-shadow:0 0 0 1px var(--accent)}
+.tok.fail{background:rgba(248,113,113,.22)}
+.tok.match{background:rgba(52,211,153,.22)}
+.tok.anchor{color:var(--purple)}
+.tok.quant{color:var(--orange); font-weight:600}
+.tok.group{color:var(--yellow)}
+.tok.class{color:var(--green)}
+.tok.shorthand{color:var(--green)}
+.tok.escape{color:var(--accent)}
+.tok.special{color:var(--purple)}
+
+/* Test string visualization */
+.str-viz{
+  background:var(--bg3); border:1px solid var(--border2); border-radius:7px;
+  padding:12px; font-family:"SF Mono",Menlo,Consolas,monospace; font-size:14px;
+  line-height:2.0; white-space:pre-wrap; word-break:break-all; min-height:60px; position:relative;
+}
+.ch{position:relative; padding:1px 0}
+.ch.match{background:rgba(52,211,153,.30); border-radius:2px}
+.ch.cur{background:var(--accent); color:#fff; border-radius:2px}
+.ch.cur::before{content:""; position:absolute; left:-1px; top:-2px; width:2px; height:calc(100% + 4px); background:var(--accent)}
+.ch.space-vis{color:var(--muted2)}
+.gutter{position:absolute; left:0; top:0; bottom:0; width:0}
+
+/* Explanation */
+.explain{font-size:12.5px; line-height:1.7}
+.explain .step-line{
+  padding:10px 12px; border-radius:7px; margin-bottom:6px;
+  background:var(--bg3); border:1px solid var(--border2);
+  display:flex; gap:10px; align-items:flex-start;
+}
+.explain .step-line.current{border-color:var(--accent); background:rgba(91,157,255,.08); box-shadow:0 0 0 1px var(--accent)}
+.explain .step-line.accept{border-color:var(--green); background:rgba(52,211,153,.08)}
+.explain .step-line.fail-step{border-color:var(--red); background:rgba(248,113,113,.06)}
+.explain .icon{
+  width:22px; height:22px; border-radius:5px; flex-shrink:0;
+  display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700;
+}
+.icon.try{background:rgba(91,157,255,.2); color:var(--accent)}
+.icon.match{background:rgba(52,211,153,.2); color:var(--green)}
+.icon.fail{background:rgba(248,113,113,.2); color:var(--red)}
+.icon.info{background:rgba(167,139,250,.2); color:var(--purple)}
+.icon.accept{background:var(--green); color:#06281b}
+.icon.alt{background:rgba(251,191,36,.2); color:var(--yellow)}
+.icon.quant{background:rgba(251,146,60,.2); color:var(--orange)}
+.step-line .body{flex:1; min-width:0}
+.step-line .title{font-weight:600; margin-bottom:2px}
+.step-line .detail{color:var(--muted); font-size:11.5px; font-family:"SF Mono",monospace; word-break:break-all}
+.step-line .pos-tag{
+  display:inline-block; background:var(--bg4); padding:1px 7px; border-radius:4px;
+  font-size:11px; font-family:monospace; margin-left:6px;
+}
+
+/* Step list */
+.step-list{font-family:"SF Mono",Menlo,Consolas,monospace; font-size:11.5px}
+.step-list .row{
+  padding:5px 10px; border-bottom:1px solid var(--border); cursor:pointer;
+  display:flex; gap:8px; align-items:center; white-space:nowrap; overflow:hidden;
+}
+.step-list .row:hover{background:var(--bg3)}
+.step-list .row.current{background:rgba(91,157,255,.15); border-left:2px solid var(--accent)}
+.step-list .row .num{color:var(--muted2); width:34px; flex-shrink:0}
+.step-list .row .type{font-weight:600; width:78px; flex-shrink:0}
+.step-list .row .type.try{color:var(--accent)}
+.step-list .row .type.match{color:var(--green)}
+.step-list .row .type.fail{color:var(--red)}
+.step-list .row .type.accept{color:var(--green)}
+.step-list .row .type.info{color:var(--purple)}
+.step-list .row .type.alt-try{color:var(--yellow)}
+.step-list .row .type.quant-try{color:var(--orange)}
+.step-list .row .type.quant-stop{color:var(--orange)}
+.step-list .row .type.start{color:var(--muted)}
+.step-list .row .type.group{color:var(--yellow)}
+.step-list .row .desc{color:var(--muted); overflow:hidden; text-overflow:ellipsis}
+
+/* Captures */
+.caps-table{font-size:12px; font-family:"SF Mono",monospace}
+.caps-table .row{
+  display:grid; grid-template-columns:30px 90px 1fr; gap:8px;
+  padding:6px 8px; border-bottom:1px solid var(--border); align-items:center;
+}
+.caps-table .row.head{color:var(--muted); font-weight:600; background:var(--bg2)}
+.caps-table .idx{color:var(--accent)}
+.caps-table .range{color:var(--muted)}
+.caps-table .val{color:var(--green); word-break:break-all}
+.caps-table .empty{color:var(--muted2); font-style:italic}
+
+/* Match info */
+.match-info{font-size:12.5px}
+.match-info .match-card{
+  background:var(--bg3); border:1px solid var(--border2); border-radius:7px;
+  padding:10px 12px; margin-bottom:8px;
+}
+.match-info .match-card .h{display:flex; justify-content:space-between; margin-bottom:6px}
+.match-info .match-card .h .txt{color:var(--green); font-family:monospace; word-break:break-all}
+.match-info .match-card .h .range{color:var(--muted); font-size:11px; font-family:monospace}
+.match-info .no-match{color:var(--muted); font-style:italic; padding:8px 0}
+.match-info .stat{
+  display:flex; gap:16px; padding:8px 0; color:var(--muted); font-size:12px;
+  border-bottom:1px solid var(--border); margin-bottom:10px;
+}
+.match-info .stat b{color:var(--text)}
+
+/* Controls */
+.controls{
+  display:flex; gap:8px; align-items:center; padding:8px 14px;
+  background:var(--bg2); border-top:1px solid var(--border);
+}
+.controls .btn{
+  background:var(--bg3); border:1px solid var(--border2); color:var(--text);
+  padding:7px 14px; border-radius:6px; font-size:12px; font-weight:500;
+  display:flex; align-items:center; gap:6px;
+}
+.controls .btn:hover{background:var(--bg4)}
+.controls .btn:disabled{opacity:.4; cursor:not-allowed}
+.controls .btn.primary{background:var(--accent2); border-color:var(--accent2); color:#fff}
+.controls .btn.primary:hover{background:var(--accent)}
+.controls .btn .ic{font-size:14px; line-height:1}
+.controls .slider-wrap{display:flex; align-items:center; gap:8px; color:var(--muted); font-size:11px}
+.controls .slider-wrap.first{margin-left:auto}
+.controls input[type=range]{width:120px; accent-color:var(--accent)}
+.controls input[type=number]{width:78px; background:var(--bg3); border:1px solid var(--border2); border-radius:5px; color:var(--text); font-family:monospace; font-size:12px; padding:4px 6px; outline:none}
+.controls input[type=number]:focus{border-color:var(--accent)}
+.controls .step-counter{
+  font-family:monospace; font-size:12px; color:var(--muted);
+  background:var(--bg3); padding:4px 10px; border-radius:5px; border:1px solid var(--border2);
+  min-width:80px; text-align:center;
+}
+
+/* Timeline scrubber */
+.timeline-wrap{
+  padding:8px 14px 6px; background:var(--bg2); border-top:1px solid var(--border);
+}
+.timeline-info{
+  display:flex; align-items:center; gap:10px; margin-bottom:6px; font-size:11px;
+}
+.timeline-info .tl-label{color:var(--muted); font-weight:600; text-transform:uppercase; letter-spacing:.05em}
+.timeline-info .tl-step{font-family:monospace; color:var(--text); background:var(--bg4); padding:1px 7px; border-radius:4px}
+.timeline-info .tl-trunc{color:var(--yellow); font-size:10.5px}
+.timeline{
+  position:relative; height:26px; background:var(--bg3); border:1px solid var(--border2);
+  border-radius:6px; cursor:pointer; user-select:none;
+}
+.timeline-track{position:absolute; left:0; right:0; top:0; bottom:0; border-radius:6px}
+.timeline-progress{
+  position:absolute; left:0; top:0; bottom:0; width:0;
+  background:linear-gradient(90deg, rgba(91,157,255,.25), rgba(91,157,255,.12));
+  border-radius:6px 0 0 6px; pointer-events:none;
+}
+.timeline-thumb{
+  position:absolute; top:50%; left:0; width:4px; height:30px; transform:translate(-50%,-50%);
+  background:var(--accent); border-radius:2px; pointer-events:none;
+  box-shadow:0 0 0 2px rgba(91,157,255,.25), 0 0 8px rgba(91,157,255,.5);
+  transition:left .03s linear;
+}
+.timeline-thumb::after{
+  content:""; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  width:14px; height:14px; border-radius:50%;
+  background:var(--accent); box-shadow:0 0 0 3px rgba(91,157,255,.2);
+}
+.timeline-marks{position:absolute; left:0; right:0; top:0; bottom:0; pointer-events:none}
+.timeline-marks .mark{position:absolute; top:50%; transform:translate(-50%,-50%); width:2px; height:14px; border-radius:1px}
+.timeline-marks .mark.accept{background:var(--green); opacity:.85}
+.timeline-marks .mark.fail{background:var(--red); opacity:.4}
+.timeline-marks .mark.start{background:var(--purple); opacity:.5; height:8px}
+.timeline:active .timeline-thumb, .timeline.dragging .timeline-thumb{cursor:grabbing}
+
+/* Sub-tabs */
+.subtabs{display:flex; gap:4px; margin-bottom:10px; flex-wrap:wrap}
+.subtab{
+  background:var(--bg3); border:1px solid var(--border2); color:var(--muted);
+  padding:5px 12px; border-radius:5px; font-size:11.5px; font-weight:600;
+}
+.subtab.active{background:var(--accent2); border-color:var(--accent2); color:#fff}
+
+/* Legend */
+.legend{display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--muted); padding:8px 0; border-top:1px solid var(--border); margin-top:10px}
+.legend .item{display:flex; align-items:center; gap:5px}
+.legend .sw{width:12px; height:12px; border-radius:3px}
+
+/* Empty state */
+.empty-state{color:var(--muted2); font-size:12px; padding:20px 0; text-align:center}
+
+/* Scrollbars */
+::-webkit-scrollbar{width:10px; height:10px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border2); border-radius:5px}
+::-webkit-scrollbar-thumb:hover{background:var(--muted2)}
+
+@media (max-width:900px){
+  .main{grid-template-columns:1fr; grid-template-rows:1fr 1fr}
+  .pane.left{border-right:none; border-bottom:1px solid var(--border)}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Top bar -->
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">/.*/</div>
+      <div>
+        <div>Regex Debugger</div>
+        <div class="sub">пошаговая отладка регулярных выражений</div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <div class="examples-wrap">
+      <button class="examples-btn" id="examplesBtn">📚 Примеры ▾</button>
+      <div class="examples-menu" id="examplesMenu"></div>
+    </div>
+  </div>
+
+  <!-- Main panes -->
+  <div class="main">
+    <!-- LEFT: inputs -->
+    <div class="pane left">
+      <div class="pane-head">Ввод</div>
+      <div class="pane-body">
+        <div class="field">
+          <label>Регулярное выражение</label>
+          <div class="pattern-row">
+            <textarea class="pattern-input" id="pattern" placeholder="напр. \d{2,4}-\d{2,4}" spellcheck="false" autocomplete="off" rows="2">(\w+)@(\w+)\.(\w+)</textarea>
+            <input class="flags-input" id="flags" value="g" title="Флаги: g i m s" spellcheck="false" autocomplete="off">
+          </div>
+          <div class="error-msg" id="patternError" style="display:none"></div>
+          <div class="pattern-viz" id="patternViz"></div>
+        </div>
+        <div class="field">
+          <label>Тестовая строка</label>
+          <textarea class="test-input" id="testStr" spellcheck="false">user1@mail.com и admin@site.org</textarea>
+        </div>
+        <div class="field">
+          <label>Строка с совпадениями</label>
+          <div class="str-viz" id="strViz"></div>
+        </div>
+        <div class="legend">
+          <div class="item"><div class="sw" style="background:rgba(91,157,255,.25)"></div>текущий узел</div>
+          <div class="item"><div class="sw" style="background:rgba(52,211,153,.30)"></div>совпадение</div>
+          <div class="item"><div class="sw" style="background:var(--accent)"></div>курсор</div>
+          <div class="item"><div class="sw" style="background:rgba(248,113,113,.22)"></div>ошибка</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: debugger -->
+    <div class="pane right">
+      <div class="pane-head">
+        Отладчик
+        <span class="pill" id="statusPill">—</span>
+      </div>
+      <div class="pane-body">
+        <div class="subtabs">
+          <button class="subtab active" data-tab="explain">Объяснение</button>
+          <button class="subtab" data-tab="steps">Шаги (<span id="stepsCount">0</span>)</button>
+          <button class="subtab" data-tab="captures">Группы</button>
+          <button class="subtab" data-tab="matches">Совпадения</button>
+        </div>
+        <div id="tab-explain" class="tab-panel"><div class="empty-state">Введите паттерн и строку — отладка запустится автоматически.</div></div>
+        <div id="tab-steps" class="tab-panel" style="display:none"></div>
+        <div id="tab-captures" class="tab-panel" style="display:none"></div>
+        <div id="tab-matches" class="tab-panel" style="display:none"></div>
+      </div>
+      <div class="timeline-wrap" id="timelineWrap">
+        <div class="timeline-info">
+          <span class="tl-label">Таймлайн шагов</span>
+          <span class="tl-step" id="tlStep">—</span>
+          <span class="tl-trunc" id="tlTrunc" style="display:none">⚠ трассировка ограничена (защита от зависания)</span>
+        </div>
+        <div class="timeline" id="timeline">
+          <div class="timeline-track" id="timelineTrack"></div>
+          <div class="timeline-progress" id="timelineProgress"></div>
+          <div class="timeline-thumb" id="timelineThumb"></div>
+          <div class="timeline-marks" id="timelineMarks"></div>
+        </div>
+      </div>
+      <div class="controls">
+        <button class="btn" id="btnReset" title="В начало"><span class="ic">⏮</span> В начало</button>
+        <button class="btn" id="btnPrev" title="Назад"><span class="ic">◀</span> Назад</button>
+        <button class="btn primary" id="btnPlay" title="Воспроизвести"><span class="ic">▶</span> Пуск</button>
+        <button class="btn" id="btnNext" title="Вперёд"><span class="ic">▶</span> Вперёд</button>
+        <button class="btn" id="btnEnd" title="В конец"><span class="ic">⏭</span> В конец</button>
+        <div class="step-counter" id="stepCounter">0 / 0</div>
+        <div class="slider-wrap first">
+          <span>Скорость</span>
+          <input type="range" id="speed" min="50" max="1000" value="350" step="50">
+        </div>
+        <div class="slider-wrap">
+          <span>Лимит шагов</span>
+          <input type="number" id="maxSteps" value="1000" min="50" max="200000" step="50" title="Макс. число записываемых шагов трассировки">
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const RegexEngine = (function(){
+// Движок пошаговой отладки регулярных выражений (backtracking, CPS на генераторах).
+// Поддерживаемое подмножество: литералы, '.', классы [...], шорткаты \d \w \s,
+// кванторы * + ? {n,m} (жадные/ленивые), группы (?:...) (?<name>...) (...),
+// альтернативы |, якоря ^ $ \b \B \A \z, backreferences \1 \k<name>,
+// lookahead (?=...) (?!...), lookbehind (?<=...) (?<!...), флаги g i m s.
+
+// ---------- Утилиты ----------
+function isWordChar(ch) {
+  return ch !== undefined && /[A-Za-z0-9_]/.test(ch);
+}
+
+let _id = 0;
+function tag(node) { node.id = _id++; return node; }
+
+// ---------- Узлы AST ----------
+class Literal {
+  constructor(ch, range) { this.type='literal'; this.ch=ch; this.range=range; tag(this); }
+  *exec(ctx, pos, caps, k) {
+    ctx.emit({type:'try', node:this, pos, caps});
+    const ch = ctx.str[pos];
+    if (ch !== undefined && ctx.charEq(ch, this.ch)) {
+      ctx.emit({type:'match', node:this, pos:pos+1, caps});
+      yield* k(pos+1, caps);
+    } else {
+      ctx.emit({type:'fail', node:this, pos, caps, reason: ch===undefined ? 'конец строки' : 'ожидался «'+this.ch+'», получен «'+ch+'»'});
+    }
+  }
+}
+
+class Dot {
+  constructor(range) { this.type='dot'; this.range=range; tag(this); }
+  *exec(ctx, pos, caps, k) {
+    ctx.emit({type:'try', node:this, pos, caps});
+    const ch = ctx.str[pos];
+    if (ch !== undefined && (ctx.dotAll || ch !== '\n')) {
+      ctx.emit({type:'match', node:this, pos:pos+1, caps});
+      yield* k(pos+1, caps);
+    } else {
+      ctx.emit({type:'fail', node:this, pos, caps, reason: ch===undefined ? 'конец строки' : 'любой символ, кроме перевода строки'});
+    }
+  }
+}
+
+class Shorthand {
+  constructor(kind, neg, range) { this.type='shorthand'; this.kind=kind; this.neg=neg; this.range=range; tag(this); }
+  matches(ch) {
+    let m;
+    if (this.kind==='d') m = /[0-9]/.test(ch);
+    else if (this.kind==='w') m = /[A-Za-z0-9_]/.test(ch);
+    else m = /\s/.test(ch);
+    return this.neg ? !m : m;
+  }
+  *exec(ctx, pos, caps, k) {
+    ctx.emit({type:'try', node:this, pos, caps});
+    const ch = ctx.str[pos];
+    if (ch !== undefined && this.matches(ch)) {
+      ctx.emit({type:'match', node:this, pos:pos+1, caps});
+      yield* k(pos+1, caps);
+    } else {
+      ctx.emit({type:'fail', node:this, pos, caps, reason: ch===undefined ? 'конец строки' : 'символ не подходит под '+(!this.neg?'\\'+this.kind:'\\'+this.kind.toUpperCase())});
+    }
+  }
+}
+
+class CharClass {
+  constructor(items, neg, range) { this.type='class'; this.items=items; this.neg=neg; this.range=range; tag(this); }
+  matches(ch, ctx) {
+    for (const it of this.items) {
+      let hit = false;
+      if (it.type==='char') hit = ctx.charEq(ch, it.ch);
+      else if (it.type==='range') {
+        const a = it.from.codePointAt(0), b = it.to.codePointAt(0), c = ch.codePointAt(0);
+        hit = c >= a && c <= b;
+        if (ctx.ci) hit = hit || (ch.toLowerCase()>=it.from.toLowerCase() && ch.toLowerCase()<=it.to.toLowerCase());
+      } else if (it.type==='shorthand') {
+        const sh = new Shorthand(it.kind, it.neg, [0,0]);
+        hit = sh.matches(ch);
+      }
+      if (hit) return !this.neg;
+    }
+    return this.neg;
+  }
+  *exec(ctx, pos, caps, k) {
+    ctx.emit({type:'try', node:this, pos, caps});
+    const ch = ctx.str[pos];
+    if (ch !== undefined && this.matches(ch, ctx)) {
+      ctx.emit({type:'match', node:this, pos:pos+1, caps});
+      yield* k(pos+1, caps);
+    } else {
+      ctx.emit({type:'fail', node:this, pos, caps, reason: ch===undefined ? 'конец строки' : 'символ не входит в класс'});
+    }
+  }
+}
+
+class Anchor {
+  constructor(kind, range) { this.type='anchor'; this.kind=kind; this.range=range; tag(this); }
+  *exec(ctx, pos, caps, k) {
+    ctx.emit({type:'try', node:this, pos, caps});
+    let ok=false, why='';
+    if (this.kind==='^') { ok = pos===0 || (ctx.multiline && ctx.str[pos-1]==='\n'); why='начало строки'; }
+    else if (this.kind==='$') { ok = pos===ctx.str.length || (ctx.multiline && ctx.str[pos]==='\n'); why='конец строки'; }
+    else if (this.kind==='\\b') { ok = ctx.wordBoundary(pos); why='граница слова'; }
+    else if (this.kind==='\\B') { ok = !ctx.wordBoundary(pos); why='не граница слова'; }
+    else if (this.kind==='\\A') { ok = pos===0; why='начало текста'; }
+    else if (this.kind==='\\z') { ok = pos===ctx.str.length; why='конец текста'; }
+    if (ok) { ctx.emit({type:'match', node:this, pos, caps}); yield* k(pos, caps); }
+    else ctx.emit({type:'fail', node:this, pos, caps, reason:'условие «'+why+'» не выполнено'});
+  }
+}
+
+class Group {
+  constructor(body, capturing, index, name, range) {
+    this.type='group'; this.body=body; this.capturing=capturing; this.index=index; this.name=name; this.range=range; tag(this);
+  }
+  *exec(ctx, pos, caps, k) {
+    ctx.emit({type:'try', node:this, pos, caps});
+    const start = pos, idx = this.index, self = this;
+    yield* self.body.exec(ctx, pos, caps, function*(p, c){
+      let c2 = c;
+      if (idx !== null) { c2 = c.slice(); c2[idx] = [start, p]; }
+      ctx.emit({type:'group', node:self, start, end:p, caps:c2});
+      yield* k(p, c2);
+    });
+  }
+}
+
+class Quant {
+  constructor(body, min, max, lazy, symbol, range) {
+    this.type='quant'; this.body=body; this.min=min; this.max=max; this.lazy=lazy; this.symbol=symbol; this.range=range; tag(this);
+  }
+  *exec(ctx, pos, caps, k) {
+    if (this.lazy) yield* this.lazy_(ctx, pos, caps, k, 0);
+    else yield* this.greedy(ctx, pos, caps, k, 0);
+  }
+  *greedy(ctx, pos, caps, k, count) {
+    if (count < this.max) {
+      ctx.emit({type:'quant-try', node:this, pos, caps, count, mode:'greedy'});
+      const self = this;
+      yield* self.body.exec(ctx, pos, caps, function*(p, c){
+        if (p === pos) return; // защита от нулевой ширины
+        yield* self.greedy(ctx, p, c, k, count+1);
+      });
+    }
+    if (count >= this.min) {
+      ctx.emit({type:'quant-stop', node:this, pos, caps, count});
+      yield* k(pos, caps);
+    }
+  }
+  *lazy_(ctx, pos, caps, k, count) {
+    if (count >= this.min) {
+      ctx.emit({type:'quant-stop', node:this, pos, caps, count, mode:'lazy'});
+      yield* k(pos, caps);
+    }
+    if (count < this.max) {
+      ctx.emit({type:'quant-try', node:this, pos, caps, count, mode:'lazy'});
+      const self = this;
+      yield* self.body.exec(ctx, pos, caps, function*(p, c){
+        if (p === pos) return;
+        yield* self.lazy_(ctx, p, c, k, count+1);
+      });
+    }
+  }
+}
+
+class Concat {
+  constructor(items, range) { this.type='concat'; this.items=items; this.range=range; tag(this); }
+  *exec(ctx, pos, caps, k) {
+    const items=this.items, n=items.length;
+    function* step(i, p, c) {
+      if (i===n) { yield* k(p, c); return; }
+      yield* items[i].exec(ctx, p, c, function*(p2, c2){ yield* step(i+1, p2, c2); });
+    }
+    yield* step(0, pos, caps);
+  }
+}
+
+class Alt {
+  constructor(branches, range) { this.type='alt'; this.branches=branches; this.range=range; tag(this); }
+  *exec(ctx, pos, caps, k) {
+    for (let bi=0; bi<this.branches.length; bi++) {
+      ctx.emit({type:'alt-try', node:this, pos, caps, branch:bi});
+      yield* this.branches[bi].exec(ctx, pos, caps, k);
+    }
+  }
+}
+
+class Backref {
+  constructor(index, name, range) { this.type='backref'; this.index=index; this.name=name; this.range=range; tag(this); }
+  *exec(ctx, pos, caps, k) {
+    ctx.emit({type:'try', node:this, pos, caps});
+    // 1-based индексация captures: caps[1] = первая группа (caps[0] = полное совпадение)
+    const idx = this.name ? (ctx.groupNames[this.name]) : this.index;
+    const cap = (idx && idx < caps.length) ? caps[idx] : null;
+    if (!cap) {
+      ctx.emit({type:'match', node:this, pos, caps, reason:'группа не сопоставлена — backref соответствует пустой строке'});
+      yield* k(pos, caps);
+      return;
+    }
+    const text = ctx.str.slice(cap[0], cap[1]);
+    const sub = ctx.str.slice(pos, pos+text.length);
+    const ok = ctx.ci ? sub.toLowerCase()===text.toLowerCase() : sub===text;
+    if (ok) {
+      ctx.emit({type:'match', node:this, pos:pos+text.length, caps});
+      yield* k(pos+text.length, caps);
+    } else {
+      ctx.emit({type:'fail', node:this, pos, caps, reason:'ожидалось «'+text+'», получено «'+sub+'»'});
+    }
+  }
+}
+
+class Lookahead {
+  constructor(body, neg, range) { this.type='lookahead'; this.body=body; this.neg=neg; this.range=range; tag(this); }
+  *exec(ctx, pos, caps, k) {
+    ctx.emit({type:'try', node:this, pos, caps});
+    let matched=false, mcaps=caps;
+    const gen = this.body.exec(ctx, pos, caps, function*(p,c){ matched=true; mcaps=c; yield true; });
+    gen.next();
+    if (this.neg) {
+      if (!matched) { ctx.emit({type:'match', node:this, pos, caps, reason:'тело не сопоставилось — негативный lookahead выполнен'}); yield* k(pos, caps); }
+      else ctx.emit({type:'fail', node:this, pos, caps, reason:'негативный lookahead: тело сопоставилось'});
+    } else {
+      if (matched) { ctx.emit({type:'match', node:this, pos, caps:mcaps}); yield* k(pos, mcaps); }
+      else ctx.emit({type:'fail', node:this, pos, caps, reason:'позитивный lookahead: тело не сопоставилось'});
+    }
+  }
+}
+
+class Lookbehind {
+  constructor(body, neg, range) { this.type='lookbehind'; this.body=body; this.neg=neg; this.range=range; tag(this); }
+  *exec(ctx, pos, caps, k) {
+    ctx.emit({type:'try', node:this, pos, caps});
+    let matched=false, mcaps=caps;
+    for (let s=0; s<=pos && !matched; s++) {
+      const gen = this.body.exec(ctx, s, caps, function*(p,c){ if (p===pos){ matched=true; mcaps=c; yield true; } });
+      gen.next();
+    }
+    if (this.neg) {
+      if (!matched) { ctx.emit({type:'match', node:this, pos, caps, reason:'тело не сопоставилось — негативный lookbehind выполнен'}); yield* k(pos, caps); }
+      else ctx.emit({type:'fail', node:this, pos, caps, reason:'негативный lookbehind: тело сопоставилось слева'});
+    } else {
+      if (matched) { ctx.emit({type:'match', node:this, pos, caps:mcaps}); yield* k(pos, mcaps); }
+      else ctx.emit({type:'fail', node:this, pos, caps, reason:'позитивный lookbehind: тело не сопоставилось слева'});
+    }
+  }
+}
+
+// ---------- Контекст ----------
+class Ctx {
+  constructor(str, flags, groupNames) {
+    this.str=str; this.flags=flags;
+    this.ci=flags.includes('i');
+    this.dotAll=flags.includes('s');
+    this.multiline=flags.includes('m');
+    this.global=flags.includes('g');
+    this.groupNames=groupNames||{};
+    this.steps=[];
+    this.startPos=0;
+    this.maxSteps = 1000;        // жёсткий лимит трассировки (защита от ReDoS)
+    this.truncated = false;
+    this.stopped = false;        // флаг полной остановки генерации
+  }
+  emit(step) {
+    if (this.stopped) return;
+    step.searchStart=this.startPos;
+    this.steps.push(step);
+    if (this.steps.length >= this.maxSteps) {
+      this.truncated = true;
+      this.stopped = true;
+      this.steps.push({type:'info', message:'Достигнут лимит шагов ('+this.maxSteps+') — трассировка остановлена во избежание зависания. Увеличьте «Лимит шагов», если нужно больше.', pos: this.startPos, searchStart: this.startPos});
+    }
+  }
+  charEq(a,b){ return this.ci ? a.toLowerCase()===b.toLowerCase() : a===b; }
+  wordBoundary(pos){ return isWordChar(this.str[pos-1]) !== isWordChar(this.str[pos]); }
+}
+
+// ---------- Парсер ----------
+function parseRegex(pattern, flags) {
+  _id = 0;
+  let i=0; const n=pattern.length;
+  let groupCounter=0; const groupNames={};
+  const err = (msg) => { const e=new Error(msg+' (позиция '+i+')'); e.pos=i; return e; };
+
+  function peek(o=0){ return pattern[i+o]; }
+  function eof(){ return i>=n; }
+
+  function parseAlt() {
+    const start=i;
+    const branches=[parseConcat()];
+    while (!eof() && peek()==='|') { i++; branches.push(parseConcat()); }
+    const range=[start, i];
+    if (branches.length===1) return branches[0];
+    return new Alt(branches, range);
+  }
+  function parseConcat() {
+    const start=i; const items=[];
+    while (!eof() && peek()!=='|' && peek()!==')') {
+      const a=parseQuantified(); if (a) items.push(a);
+    }
+    const range=items.length ? [items[0].range[0], items[items.length-1].range[1]] : [start, start];
+    if (items.length===1) return items[0];
+    return new Concat(items, range);
+  }
+  function parseQuantified() {
+    const atom=parseAtom(); if (!atom) return null;
+    const c=peek();
+    if (c==='*'||c==='+'||c==='?') {
+      const qs=i; i++;
+      let lazy=false; if (peek()==='?'){ lazy=true; i++; }
+      const min=c==='+'?1:0, max=c==='?'?1:Infinity;
+      return new Quant(atom, min, max, lazy, c, [atom.range[0], i]);
+    }
+    if (c==='{') {
+      const save=i; i++;
+      let n1=''; while (/[0-9]/.test(peek())) n1+=pattern[i++];
+      if (n1==='') { i=save; return atom; }
+      let min=parseInt(n1,10), max=min;
+      if (peek()===',') { i++; let n2=''; while(/[0-9]/.test(peek())) n2+=pattern[i++]; max = n2===''? Infinity : parseInt(n2,10); }
+      if (peek()!=='}') { i=save; return atom; }
+      i++;
+      let lazy=false; if (peek()==='?'){ lazy=true; i++; }
+      if (min>max) throw err('в {min,max} min не может быть больше max');
+      return new Quant(atom, min, max, lazy, pattern.slice(save,i), [atom.range[0], i]);
+    }
+    return atom;
+  }
+  function parseAtom() {
+    const c=peek();
+    if (c===undefined) return null;
+    if (c==='(') return parseGroup();
+    if (c==='[') return parseClass();
+    if (c==='.') { const s=i; i++; return new Dot([s,i]); }
+    if (c==='^') { const s=i; i++; return new Anchor('^',[s,i]); }
+    if (c==='$') { const s=i; i++; return new Anchor('$',[s,i]); }
+    if (c==='\\') return parseEscape();
+    if (c===')'||c==='|') return null;
+    // специальный символ без экранирования — трактруем как литерал, но отметим
+    const s=i; i++; return new Literal(c,[s,i]);
+  }
+  function parseEscape() {
+    const start=i; i++; // '\'
+    const c=pattern[i++];
+    switch(c){
+      case 'd': return new Shorthand('d',false,[start,i]);
+      case 'D': return new Shorthand('d',true,[start,i]);
+      case 'w': return new Shorthand('w',false,[start,i]);
+      case 'W': return new Shorthand('w',true,[start,i]);
+      case 's': return new Shorthand('s',false,[start,i]);
+      case 'S': return new Shorthand('s',true,[start,i]);
+      case 'b': return new Anchor('\\b',[start,i]);
+      case 'B': return new Anchor('\\B',[start,i]);
+      case 'A': return new Anchor('\\A',[start,i]);
+      case 'z': return new Anchor('\\z',[start,i]);
+      case 'Z': return new Anchor('\\z',[start,i]);
+      case 'n': return new Literal('\n',[start,i]);
+      case 't': return new Literal('\t',[start,i]);
+      case 'r': return new Literal('\r',[start,i]);
+      case 'f': return new Literal('\f',[start,i]);
+      case 'v': return new Literal('\v',[start,i]);
+      case '0': return new Literal('\0',[start,i]);
+      case 'x': { const h=pattern.substr(i,2); i+=2; return new Literal(String.fromCharCode(parseInt(h,16)),[start,i]); }
+      case 'u': {
+        if (pattern[i]==='{'){ i++; let h=''; while(pattern[i]!=='}' && !eof()) h+=pattern[i++]; i++; return new Literal(String.fromCodePoint(parseInt(h,16)),[start,i]); }
+        const h=pattern.substr(i,4); i+=4; return new Literal(String.fromCharCode(parseInt(h,16)),[start,i]);
+      }
+      case 'k': {
+        if (pattern[i]==='<'){ i++; let nm=''; while(pattern[i]!=='>' && !eof()) nm+=pattern[i++]; i++; return new Backref(null,nm,[start,i]); }
+        return new Literal('k',[start,i]);
+      }
+      default:
+        if (/[1-9]/.test(c)) { let num=c; while(/[0-9]/.test(peek()) && num.length<2) num+=pattern[i++]; return new Backref(parseInt(num,10),null,[start,i]); }
+        return new Literal(c,[start,i]);
+    }
+  }
+  function parseGroup() {
+    const start=i; i++; // '('
+    let capturing=true, name=null, la=null, lb=null;
+    if (peek()==='?') {
+      i++;
+      if (peek()===':') { i++; capturing=false; }
+      else if (peek()==='<') {
+        if (peek(1)==='=' || peek(1)==='!') { lb = peek(1)==='!'?'neg':'pos'; i+=2; capturing=false; }
+        else { i++; let nm=''; while(peek()!=='>' && !eof()) nm+=pattern[i++]; i++; name=nm; capturing=true; }
+      }
+      else if (peek()==='P' && peek(1)==='<') { i+=2; let nm=''; while(peek()!=='>' && !eof()) nm+=pattern[i++]; i++; name=nm; }
+      else if (peek()==='=') { la='pos'; i++; capturing=false; }
+      else if (peek()==='!') { la='neg'; i++; capturing=false; }
+      else throw err('неизвестная конструкция группы');
+    }
+    let index=null;
+    if (capturing) { groupCounter++; index=groupCounter; if (name) groupNames[name]=index; }
+    const body=parseAlt();
+    if (peek()!==')') throw err('ожидалась )');
+    i++;
+    const range=[start,i];
+    if (la) return new Lookahead(body, la==='neg', range);
+    if (lb) return new Lookbehind(body, lb==='neg', range);
+    return new Group(body, capturing, index, name, range);
+  }
+  function parseClass() {
+    const start=i; i++; // '['
+    let neg=false;
+    if (peek()==='^') { neg=true; i++; }
+    const items=[];
+    let first=true;
+    while (!eof() && (peek()!==']' || first)) {
+      first=false;
+      if (peek()==='\\') {
+        const es=i; i++; const c=pattern[i++];
+        if (c==='d') items.push({type:'shorthand',kind:'d',neg:false});
+        else if (c==='D') items.push({type:'shorthand',kind:'d',neg:true});
+        else if (c==='w') items.push({type:'shorthand',kind:'w',neg:false});
+        else if (c==='W') items.push({type:'shorthand',kind:'w',neg:true});
+        else if (c==='s') items.push({type:'shorthand',kind:'s',neg:false});
+        else if (c==='S') items.push({type:'shorthand',kind:'s',neg:true});
+        else if (c==='n') items.push({type:'char',ch:'\n'});
+        else if (c==='t') items.push({type:'char',ch:'\t'});
+        else if (c==='r') items.push({type:'char',ch:'\r'});
+        else if (c==='f') items.push({type:'char',ch:'\f'});
+        else if (c==='v') items.push({type:'char',ch:'\v'});
+        else if (c==='0') items.push({type:'char',ch:'\0'});
+        else if (c==='b') items.push({type:'char',ch:'\b'});
+        else if (c==='x') { const h=pattern.substr(i,2); i+=2; items.push({type:'char',ch:String.fromCharCode(parseInt(h,16))}); }
+        else items.push({type:'char',ch:c});
+      } else {
+        let ch=pattern[i++];
+        if (pattern[i]==='-' && pattern[i+1]!==']' && pattern[i+1]!==undefined) {
+          i++; const to=pattern[i++];
+          items.push({type:'range',from:ch,to:to});
+        } else {
+          items.push({type:'char',ch});
+        }
+      }
+    }
+    if (peek()!==']') throw err('незакрытый класс [');
+    i++;
+    return new CharClass(items, neg, [start,i]);
+  }
+
+  const ast=parseAlt();
+  if (!eof()) throw err('неожиданный символ «'+peek()+'»');
+  return { ast, groupCount:groupCounter, groupNames };
+}
+
+// ---------- Запуск ----------
+// maxSteps — жёсткий лимит числа записываемых шагов трассировки (по умолч. 1000).
+// При достижении лимита трассировка немедленно останавливается; результат помечается
+// truncated:true. Это защищает UI от зависания на катастрофическом backtracking (ReDoS),
+// ценой того, что совпадение может быть не найдено, если оно лежит дальше лимита.
+function runMatch(pattern, flags, str, maxSteps) {
+  maxSteps = maxSteps === undefined ? 1000 : maxSteps;
+  let parsed;
+  try { parsed = parseRegex(pattern, flags); }
+  catch(e) { return { error:e.message, steps:[], matches:[], groupCount:0, groupNames:{}, truncated:false, totalSteps:0 }; }
+  const { ast, groupCount, groupNames } = parsed;
+  const ctx = new Ctx(str, flags, groupNames);
+  ctx.maxSteps = maxSteps;
+  // caps[0] = [matchStart, matchEnd] (полное совпадение), caps[1..] = группы (1-based, как match[1..])
+  const caps0 = new Array(groupCount + 1).fill(null);
+  const matches=[];
+  const global = flags.includes('g');
+  let pos=0;
+  ctx.emit({type:'info', message:'Поиск начат', pos:0});
+  outer: while (pos<=str.length && !ctx.stopped) {
+    ctx.startPos=pos;
+    ctx.emit({type:'start', pos, message:'Позиция поиска '+pos});
+    if (ctx.stopped) break;
+    const topK = function*(p,c){
+      const c2 = c.slice(); c2[0] = [pos, p];
+      const m={start:pos, end:p, caps:c2};
+      ctx.emit({type:'accept', start:pos, end:p, caps:c2.slice()});
+      yield m;
+    };
+    const gen=ast.exec(ctx, pos, caps0, topK);
+    const first=gen.next();
+    if (!first.done) {
+      matches.push(first.value);
+      if (!global) break outer;
+      pos = first.value.end===pos ? pos+1 : first.value.end;
+    } else { pos++; }
+  }
+  if (!matches.length && !ctx.truncated) ctx.emit({type:'info', message:'Совпадений не найдено', pos});
+  return { steps:ctx.steps, matches, groupCount, groupNames, ast, truncated: ctx.truncated, totalSteps: ctx.steps.length };
+}
+return { parseRegex, runMatch, isWordChar };
+})();
+
+// === UI логика Regex Debugger ===
+'use strict';
+
+const STATE = {
+  steps: [],
+  matches: [],
+  groupCount: 0,
+  groupNames: {},
+  ast: null,
+  pattern: '',
+  flags: 'g',
+  testStr: '',
+  cur: 0,           // индекс текущего шага в steps
+  playing: false,
+  timer: null,
+  speed: 350,
+  error: null,
+  curTab: 'explain',
+  truncated: false,
+};
+
+const $ = (id) => document.getElementById(id);
+
+const EXAMPLES = [
+  { t: '\\w+@\\w+\\.\\w+', f: 'g', s: 'user1@mail.com и admin@site.org', d: 'Email-подобные адреса' },
+  { t: '(\\w+)\\1', f: 'g', s: 'aabbccde xyz hello', d: 'Backreference: двойные буквы' },
+  { t: '\\d{2,4}-\\d{2,4}', f: 'g', s: 'телефон 123-4567 или 12-3456', d: 'Диапазоны кванторов {n,m}' },
+  { t: '(?:cat|dog|bird)s?', f: 'g', s: 'cat dog bird cats dogs birds', d: 'Альтернативы и группы' },
+  { t: '\\b\\w+\\b', f: 'g', s: 'hello, world! foo bar', d: 'Границы слов' },
+  { t: 'a.*?b', f: 'g', s: 'aXXbYYbZZb — ленивый', d: 'Ленивый квантор *?' },
+  { t: '(?<year>\\d{4})-(?<month>\\d{2})', f: 'g', s: '2024-03 и 2025-11', d: 'Именованные группы' },
+  { t: '\\d+(?=руб)', f: 'g', s: '100руб и 200евро', d: 'Позитивный lookahead' },
+  { t: '(?<=@)\\w+', f: 'g', s: '@user1 @admin @test', d: 'Позитивный lookbehind' },
+  { t: '(a+)+b', f: 'g', s: 'aaaab aaaaaaaaaaaa!', d: 'Катастрофический backtracking (ReDoS)' },
+  { t: '^\\s*(\\w+).*$', f: 'gm', s: '  первая строка\nвторая\n  третья', d: 'Многострочный режим' },
+  { t: '[A-Za-z0-9._%+-]+', f: 'g', s: 'a.b+c@d-e_f', d: 'Классы символов' },
+];
+
+// ---------- Описание типов шагов для человека ----------
+function describeStep(step, fullStr) {
+  const node = step.node;
+  let title = '', detail = '', icon = '', cls = '';
+  const posTag = (step.pos !== undefined) ? `<span class="pos-tag">pos=${step.pos}</span>` : '';
+  const rangeTag = (step.start !== undefined && step.end !== undefined)
+    ? `<span class="pos-tag">[${step.start}..${step.end}]</span>` : '';
+
+  switch (step.type) {
+    case 'try':
+      title = `Попытка сопоставить: ${nodeKind(node)}`;
+      detail = step.reason || `узел «${nodeText(node)}» в позиции ${step.pos}`;
+      icon = '?'; cls = 'try';
+      break;
+    case 'match':
+      title = `Сопоставлено: ${nodeKind(node)}`;
+      detail = step.reason || `узел «${nodeText(node)}» → позиция ${step.pos}`;
+      icon = '✓'; cls = 'match';
+      break;
+    case 'fail':
+      title = `Не сопоставлено: ${nodeKind(node)}`;
+      detail = step.reason || `узел «${nodeText(node)}» в позиции ${step.pos}`;
+      icon = '✗'; cls = 'fail';
+      break;
+    case 'group':
+      title = `Группа ${node.index}${node.name ? ' «'+node.name+'»' : ''} захвачена`;
+      detail = `диапазон [${step.start}..${step.end}] = «${esc(fullStr.slice(step.start, step.end))}»`;
+      icon = '◉'; cls = 'try';
+      break;
+    case 'quant-try':
+      title = `Квантор ${node.symbol}${node.lazy?'?':''} (жадн=${!node.lazy}) — попытка повторить`;
+      detail = `повтор №${step.count+1}, min=${node.min}, max=${node.max===Infinity?'∞':node.max}, позиция ${step.pos}`;
+      icon = '↻'; cls = 'quant';
+      break;
+    case 'quant-stop':
+      title = `Квантор ${node.symbol}${node.lazy?'?':''} — остановка повторов`;
+      detail = `сделано ${step.count} повтор(ов), позиция ${step.pos}`;
+      icon = '⏹'; cls = 'quant';
+      break;
+    case 'alt-try':
+      title = `Альтернатива — пробуем ветвь ${step.branch+1}`;
+      detail = `позиция ${step.pos}`;
+      icon = '∣'; cls = 'alt';
+      break;
+    case 'accept':
+      title = `✔ Совпадение принято!`;
+      detail = `диапазон [${step.start}..${step.end}] = «${esc(fullStr.slice(step.start, step.end))}»`;
+      icon = '✓'; cls = 'accept';
+      break;
+    case 'start':
+      title = `Поиск с позиции ${step.pos}`;
+      detail = step.message || '';
+      icon = '→'; cls = 'info';
+      break;
+    case 'info':
+      title = step.message || '';
+      detail = '';
+      icon = 'i'; cls = 'info';
+      break;
+  }
+  return { title, detail: detail + ' ' + posTag + rangeTag, icon, cls };
+}
+
+function nodeKind(n) {
+  if (!n) return '?';
+  const map = {
+    literal: 'литерал', dot: 'точка (.)', shorthand: 'шорткат', class: 'класс символов',
+    anchor: 'якорь', group: 'группа', quant: 'квантор', concat: 'конкатенация',
+    alt: 'альтернатива', backref: 'backref', lookahead: 'lookahead', lookbehind: 'lookbehind',
+  };
+  return map[n.type] || n.type;
+}
+function nodeText(n) {
+  if (!n) return '';
+  if (n.type === 'literal') return n.ch;
+  if (n.type === 'dot') return '.';
+  if (n.type === 'shorthand') return '\\'+n.kind;
+  if (n.type === 'class') return '[...]';
+  if (n.type === 'anchor') return n.kind;
+  if (n.type === 'group') return n.capturing ? `(группа ${n.index||'?'}${n.name?'/'+n.name:''})` : '(?:...)';
+  if (n.type === 'quant') return n.symbol + (n.lazy?'?':'');
+  if (n.type === 'alt') return '|';
+  if (n.type === 'backref') return n.name ? '\\k<'+n.name+'>' : '\\'+n.index;
+  if (n.type === 'lookahead') return (n.neg?'(?!)':'(?=)');
+  if (n.type === 'lookbehind') return (n.neg?'(?<!)':'(?<=');
+  return n.type;
+}
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------- Отрисовка паттерна по токенам ----------
+function buildPatternTokens(ast) {
+  // Обходим AST и собираем массив {node, range, klass}
+  const tokens = [];
+  function walk(n) {
+    if (!n) return;
+    if (n.range) {
+      const klass = tokenClass(n);
+      tokens.push({ node: n, range: n.range, klass });
+    }
+    if (n.body) walk(n.body);
+    if (n.items) n.items.forEach(walk);
+    if (n.branches) n.branches.forEach(walk);
+  }
+  walk(ast);
+  // Убираем дубли по диапазону, оставим самый вложенный (наименьший диапазон)
+  tokens.sort((a,b) => (a.range[0]-b.range[0]) || (b.range[1]-a.range[1]));
+  return tokens;
+}
+function tokenClass(n) {
+  switch (n.type) {
+    case 'anchor': return 'anchor';
+    case 'quant': return 'quant';
+    case 'group': case 'lookahead': case 'lookbehind': return 'group';
+    case 'class': return 'class';
+    case 'shorthand': return 'shorthand';
+    case 'dot': return 'special';
+    case 'backref': return 'escape';
+    default: return 'literal';
+  }
+}
+function renderPatternViz() {
+  const el = $('patternViz');
+  const pat = STATE.pattern;
+  el.innerHTML = '';
+  if (!pat) { el.innerHTML = '<span style="color:var(--muted2)">— пусто —</span>'; return; }
+  // Сначала проверим, есть ли AST
+  if (STATE.error) {
+    el.innerHTML = `<span style="color:var(--red)">ошибка разбора</span>`;
+    return;
+  }
+  // Покажем исходный паттерн, оборачивая каждый символ; токены подсветим через data-range
+  const tokens = STATE.tokens || [];
+  // Для каждой позиции в паттерне найдём самый вложенный токен, покрывающий её
+  let html = '';
+  for (let i = 0; i < pat.length; i++) {
+    const ch = pat[i];
+    let tok = null;
+    for (const t of tokens) {
+      if (i >= t.range[0] && i < t.range[1]) {
+        if (!tok || (t.range[1]-t.range[0]) <= (tok.range[1]-tok.range[0])) tok = t;
+      }
+    }
+    const cls = tok ? tok.klass : 'literal';
+    const disp = (ch === ' ') ? '·' : (ch === '\n' ? '↵' : ch);
+    html += `<span class="tok ${cls}" data-pos="${i}">${esc(disp)}</span>`;
+  }
+  el.innerHTML = html;
+}
+function highlightActivePatternNode(step) {
+  // Снимаем старую подсветку
+  document.querySelectorAll('#patternViz .tok').forEach(t => {
+    t.classList.remove('active', 'fail', 'match');
+  });
+  if (!step || !step.node || !step.node.range) return;
+  const [a, b] = step.node.range;
+  for (let i = a; i < b; i++) {
+    const el = document.querySelector(`#patternViz .tok[data-pos="${i}"]`);
+    if (el) {
+      if (step.type === 'fail') el.classList.add('fail');
+      else if (step.type === 'match' || step.type === 'group' || step.type === 'accept') el.classList.add('match');
+      else el.classList.add('active');
+    }
+  }
+}
+
+// ---------- Отрисовка строки с совпадениями ----------
+function renderStrViz(highlightStep) {
+  const el = $('strViz');
+  const s = STATE.testStr;
+  if (!s) { el.innerHTML = '<span style="color:var(--muted2)">— пусто —</span>'; return; }
+  // Все совпадения — фоном
+  const matchRanges = STATE.matches.map(m => [m.start, m.end]);
+  // Текущая позиция курсора (из шага)
+  let curPos = -1, curEnd = -1;
+  if (highlightStep) {
+    if (highlightStep.pos !== undefined) curPos = highlightStep.pos;
+    if (highlightStep.start !== undefined && highlightStep.end !== undefined) { curPos = highlightStep.start; curEnd = highlightStep.end; }
+  }
+  let html = '';
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    const inMatch = matchRanges.some(r => i >= r[0] && i < r[1]);
+    const inCurRange = curEnd >= 0 && i >= curPos && i < curEnd;
+    const isCursor = i === curPos && !inCurRange;
+    let cls = 'ch';
+    if (inMatch) cls += ' match';
+    if (inCurRange) cls += ' match';
+    if (isCursor) cls += ' cur';
+    let disp = esc(ch);
+    if (ch === ' ') disp = '·';
+    else if (ch === '\n') disp = '↵\n';
+    else if (ch === '\t') disp = '→';
+    html += `<span class="${cls}">${disp}</span>`;
+  }
+  el.innerHTML = html;
+}
+
+// ---------- Вкладки ----------
+function switchTab(name) {
+  STATE.curTab = name;
+  document.querySelectorAll('.subtab').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === name);
+  });
+  ['explain', 'steps', 'captures', 'matches'].forEach(t => {
+    $('tab-' + t).style.display = (t === name) ? '' : 'none';
+  });
+  renderCurrentTab();
+}
+
+function renderCurrentTab() {
+  switch (STATE.curTab) {
+    case 'explain': renderExplain(); break;
+    case 'steps': renderStepsList(); break;
+    case 'captures': renderCaptures(); break;
+    case 'matches': renderMatches(); break;
+  }
+}
+
+function renderExplain() {
+  const el = $('tab-explain');
+  if (!STATE.steps.length) {
+    el.innerHTML = '<div class="empty-state">Нет данных. Введите паттерн и строку.</div>';
+    return;
+  }
+  // Показываем последние ~15 шагов вокруг текущего + текущий выделен
+  const cur = STATE.cur;
+  const win = 12;
+  let start = Math.max(0, cur - win);
+  let end = Math.min(STATE.steps.length, cur + win + 1);
+  // Если в начале, покажем с 0
+  if (cur < win) { start = 0; end = Math.min(STATE.steps.length, 2*win+1); }
+  let html = '';
+  if (start > 0) html += `<div class="step-line" style="justify-content:center;color:var(--muted2);font-size:11px">… ещё ${start} шаг(ов) выше …</div>`;
+  for (let i = start; i < end; i++) {
+    const step = STATE.steps[i];
+    const d = describeStep(step, STATE.testStr);
+    const isCur = i === cur;
+    let lineCls = 'step-line';
+    if (isCur) lineCls += ' current';
+    if (d.cls === 'accept') lineCls += ' accept';
+    if (d.cls === 'fail' && isCur) lineCls += ' fail-step';
+    html += `<div class="${lineCls}" data-step="${i}">
+      <div class="icon ${d.cls}">${d.icon}</div>
+      <div class="body">
+        <div class="title">${d.title} <span style="color:var(--muted2);font-size:10px">#${i+1}</span></div>
+        <div class="detail">${d.detail}</div>
+      </div>
+    </div>`;
+  }
+  if (end < STATE.steps.length) html += `<div class="step-line" style="justify-content:center;color:var(--muted2);font-size:11px">… ещё ${STATE.steps.length-end} шаг(ов) ниже …</div>`;
+  el.innerHTML = html;
+}
+
+function renderStepsList() {
+  const el = $('tab-steps');
+  if (!STATE.steps.length) { el.innerHTML = '<div class="empty-state">Нет шагов.</div>'; return; }
+  // Ограничим до 2000 строк для производительности
+  const max = Math.min(STATE.steps.length, 2000);
+  let html = '<div class="step-list">';
+  for (let i = 0; i < max; i++) {
+    const step = STATE.steps[i];
+    const d = describeStep(step, STATE.testStr);
+    const isCur = i === STATE.cur;
+    html += `<div class="row ${isCur?'current':''}" data-step="${i}">
+      <span class="num">${i+1}</span>
+      <span class="type ${step.type}">${step.type}</span>
+      <span class="desc">${d.title}</span>
+    </div>`;
+  }
+  html += '</div>';
+  if (STATE.steps.length > max) {
+    html += `<div style="padding:8px;color:var(--muted);font-size:11px;text-align:center">Показано ${max} из ${STATE.steps.length} (ограничение UI)</div>`;
+  }
+  el.innerHTML = html;
+  // Прокрутка к текущему
+  const curRow = el.querySelector('.row.current');
+  if (curRow) curRow.scrollIntoView({ block: 'center' });
+}
+
+function renderCaptures() {
+  const el = $('tab-captures');
+  if (!STATE.matches.length) {
+    el.innerHTML = '<div class="empty-state">Совпадений нет — группы не захвачены.</div>';
+    return;
+  }
+  // Показываем captures из текущего совпадения (или первого, содержащего текущую позицию)
+  let m = STATE.matches[0];
+  const curStep = STATE.steps[STATE.cur];
+  if (curStep && curStep.caps) {
+    // Найдём совпадение, к которому относится шаг (по searchStart)
+    const ss = curStep.searchStart || 0;
+    const cand = STATE.matches.find(mm => mm.start === ss);
+    if (cand) m = cand;
+  }
+  let html = '<div class="caps-table">';
+  html += `<div class="row head"><span>№</span><span>Диапазон</span><span>Значение</span></div>`;
+  // caps[0] = полное совпадение, caps[1..] = группы
+  const names = STATE.groupNames || {};
+  const nameByIndex = {};
+  for (const k in names) nameByIndex[names[k]] = k;
+  for (let i = 0; i < m.caps.length; i++) {
+    const cap = m.caps[i];
+    const label = i === 0 ? '0 (всё)' : (i + (nameByIndex[i] ? ' «'+nameByIndex[i]+'»' : ''));
+    if (!cap) {
+      html += `<div class="row"><span class="idx">${label}</span><span class="range">—</span><span class="empty">не сопоставлено</span></div>`;
+    } else {
+      const val = STATE.testStr.slice(cap[0], cap[1]);
+      html += `<div class="row"><span class="idx">${label}</span><span class="range">[${cap[0]}..${cap[1]}]</span><span class="val">${esc(val)||'(пусто)'}</span></div>`;
+    }
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+function renderMatches() {
+  const el = $('tab-matches');
+  if (!STATE.matches.length) {
+    el.innerHTML = '<div class="empty-state">Совпадений не найдено.</div>';
+    return;
+  }
+  let html = '<div class="match-info">';
+  html += `<div class="stat"><div>Совпадений: <b>${STATE.matches.length}</b></div><div>Шагов: <b>${STATE.steps.length}</b></div></div>`;
+  STATE.matches.forEach((m, i) => {
+    const val = STATE.testStr.slice(m.start, m.end);
+    const curStep = STATE.steps[STATE.cur];
+    const isActive = curStep && (curStep.searchStart === m.start || (curStep.start !== undefined && curStep.start === m.start));
+    html += `<div class="match-card" style="${isActive?'border-color:var(--accent);':''}">
+      <div class="h">
+        <span class="txt">${esc(val)||'(пустое)'}</span>
+        <span class="range">[${m.start}..${m.end}] · длина ${m.end-m.start}</span>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">Совпадение №${i+1}</div>
+    </div>`;
+  });
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+// ---------- Главный ререндер ----------
+function renderAll() {
+  renderPatternViz();
+  renderStrViz(STATE.steps[STATE.cur]);
+  highlightActivePatternNode(STATE.steps[STATE.cur]);
+  renderCurrentTab();
+  updateCounter();
+  updateStatus();
+  renderTimeline();
+}
+
+// ---------- Таймлайн (scrubber) ----------
+const TL = { dragging: false };
+
+function renderTimeline() {
+  const total = STATE.steps.length;
+  const cur = STATE.cur;
+  const thumb = $('timelineThumb');
+  const progress = $('timelineProgress');
+  const track = $('timelineTrack');
+  const marks = $('timelineMarks');
+  const stepEl = $('tlStep');
+  const truncEl = $('tlTrunc');
+
+  // Предупреждение об усечении
+  truncEl.style.display = STATE.truncated ? '' : 'none';
+
+  if (!total) {
+    thumb.style.left = '0px';
+    progress.style.width = '0%';
+    marks.innerHTML = '';
+    stepEl.textContent = '—';
+    track.style.cursor = 'default';
+    return;
+  }
+  stepEl.textContent = (cur + 1) + ' / ' + total + (STATE.truncated ? ' (огранич.)' : '');
+
+  // Позиция ползунка в процентах
+  const pct = total > 1 ? (cur / (total - 1)) * 100 : 0;
+  thumb.style.left = pct + '%';
+  progress.style.width = pct + '%';
+
+  // Маркеры: accept (зелёные), fail (красные, прореженные), start (фиолетовые)
+  // Ограничиваем число маркеров для производительности
+  const acceptMarks = [], startMarks = [];
+  const failStep = Math.max(1, Math.floor(total / 200)); // не больше ~200 fail-маркеров
+  let failCount = 0;
+  for (let i = 0; i < total; i++) {
+    const s = STATE.steps[i];
+    if (s.type === 'accept') acceptMarks.push(i);
+    else if (s.type === 'start') startMarks.push(i);
+    else if (s.type === 'fail') { if (i % failStep === 0) failCount++; }
+  }
+  let html = '';
+  for (const i of acceptMarks) {
+    const p = total > 1 ? (i / (total - 1)) * 100 : 0;
+    html += `<div class="mark accept" style="left:${p}%"></div>`;
+  }
+  for (const i of startMarks) {
+    const p = total > 1 ? (i / (total - 1)) * 100 : 0;
+    html += `<div class="mark start" style="left:${p}%"></div>`;
+  }
+  // fail-маркеры прореженные
+  for (let i = 0; i < total; i += failStep) {
+    if (STATE.steps[i].type === 'fail') {
+      const p = total > 1 ? (i / (total - 1)) * 100 : 0;
+      html += `<div class="mark fail" style="left:${p}%"></div>`;
+    }
+  }
+  marks.innerHTML = html;
+}
+
+function timelinePctToStep(clientX) {
+  const tl = $('timeline');
+  const rect = tl.getBoundingClientRect();
+  let pct = (clientX - rect.left) / rect.width;
+  pct = Math.max(0, Math.min(1, pct));
+  const total = STATE.steps.length;
+  if (total <= 1) return 0;
+  return Math.round(pct * (total - 1));
+}
+
+function initTimeline() {
+  const tl = $('timeline');
+
+  tl.addEventListener('mousedown', (e) => {
+    if (!STATE.steps.length) return;
+    e.preventDefault();
+    stopPlay();
+    TL.dragging = true;
+    tl.classList.add('dragging');
+    gotoStep(timelinePctToStep(e.clientX));
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!TL.dragging) return;
+    gotoStep(timelinePctToStep(e.clientX));
+  });
+  window.addEventListener('mouseup', () => {
+    if (TL.dragging) { TL.dragging = false; $('timeline').classList.remove('dragging'); }
+  });
+
+  // Touch для мобильных
+  tl.addEventListener('touchstart', (e) => {
+    if (!STATE.steps.length) return;
+    e.preventDefault();
+    stopPlay();
+    TL.dragging = true;
+    const t = e.touches[0];
+    gotoStep(timelinePctToStep(t.clientX));
+  }, { passive: false });
+  window.addEventListener('touchmove', (e) => {
+    if (!TL.dragging) return;
+    const t = e.touches[0];
+    if (t) gotoStep(timelinePctToStep(t.clientX));
+  }, { passive: true });
+  window.addEventListener('touchend', () => { TL.dragging = false; });
+}
+
+function updateCounter() {
+  const cur = STATE.cur;
+  const total = STATE.steps.length;
+  $('stepCounter').textContent = total ? `${cur + 1} / ${total}` : '0 / 0';
+  $('stepsCount').textContent = total;
+}
+
+function updateStatus() {
+  const pill = $('statusPill');
+  if (STATE.error) { pill.textContent = 'ошибка'; pill.style.color = 'var(--red)'; return; }
+  if (!STATE.steps.length) { pill.textContent = '—'; pill.style.color = 'var(--muted)'; return; }
+  const step = STATE.steps[STATE.cur];
+  if (!step) { pill.textContent = '—'; return; }
+  if (step.type === 'accept') { pill.textContent = 'совпадение найдено ✓'; pill.style.color = 'var(--green)'; }
+  else if (STATE.cur === STATE.steps.length - 1 && STATE.matches.length === 0) { pill.textContent = 'совпадений нет'; pill.style.color = 'var(--red)'; }
+  else { pill.textContent = step.type; pill.style.color = 'var(--muted)'; }
+}
+
+// ---------- Запуск движка ----------
+function rebuild() {
+  STATE.pattern = $('pattern').value;
+  STATE.flags = $('flags').value || '';
+  STATE.testStr = $('testStr').value;
+  STATE.cur = 0;
+  STATE.playing = false;
+  stopPlay();
+
+  const errEl = $('patternError');
+  errEl.style.display = 'none';
+  $('pattern').classList.remove('error');
+  STATE.error = null;
+
+  let result;
+  try {
+    const maxSteps = parseInt($('maxSteps').value) || 1000;
+    result = RegexEngine.runMatch(STATE.pattern, STATE.flags, STATE.testStr, maxSteps);
+    if (result.error) throw new Error(result.error);
+    STATE.tokens = buildPatternTokens(result.ast);
+  } catch (e) {
+    STATE.error = e.message;
+    STATE.steps = [];
+    STATE.matches = [];
+    STATE.ast = null;
+    STATE.tokens = [];
+    STATE.truncated = false;
+    errEl.textContent = e.message;
+    errEl.style.display = 'block';
+    $('pattern').classList.add('error');
+    renderAll();
+    return;
+  }
+  STATE.steps = result.steps;
+  STATE.matches = result.matches;
+  STATE.groupCount = result.groupCount;
+  STATE.groupNames = result.groupNames;
+  STATE.ast = result.ast;
+  STATE.truncated = result.truncated || false;
+  // Поставим курсор на первый значимый шаг
+  STATE.cur = 0;
+  renderAll();
+}
+
+// ---------- Навигация ----------
+function gotoStep(i) {
+  STATE.cur = Math.max(0, Math.min(STATE.steps.length - 1, i));
+  renderAll();
+}
+function nextStep() { if (STATE.cur < STATE.steps.length - 1) gotoStep(STATE.cur + 1); else stopPlay(); }
+function prevStep() { if (STATE.cur > 0) gotoStep(STATE.cur - 1); }
+function startPlay() {
+  if (!STATE.steps.length) return;
+  if (STATE.cur >= STATE.steps.length - 1) STATE.cur = 0;
+  STATE.playing = true;
+  $('btnPlay').innerHTML = '<span class="ic">⏸</span> Пауза';
+  scheduleNext();
+}
+function stopPlay() {
+  STATE.playing = false;
+  $('btnPlay').innerHTML = '<span class="ic">▶</span> Пуск';
+  if (STATE.timer) { clearTimeout(STATE.timer); STATE.timer = null; }
+}
+function togglePlay() { STATE.playing ? stopPlay() : startPlay(); }
+function scheduleNext() {
+  if (!STATE.playing) return;
+  STATE.timer = setTimeout(() => {
+    if (STATE.cur < STATE.steps.length - 1) {
+      nextStep();
+      scheduleNext();
+    } else {
+      stopPlay();
+    }
+  }, STATE.speed);
+}
+
+// ---------- Примеры ----------
+function buildExamplesMenu() {
+  const el = $('examplesMenu');
+  el.innerHTML = EXAMPLES.map((ex, i) => `
+    <div class="item" data-i="${i}">
+      <div class="t">/${ex.t}/</div>
+      <div class="d">${ex.d}</div>
+    </div>`).join('');
+  el.querySelectorAll('.item').forEach(it => {
+    it.addEventListener('click', () => {
+      const i = parseInt(it.dataset.i);
+      const ex = EXAMPLES[i];
+      $('pattern').value = ex.t;
+      $('flags').value = ex.f;
+      $('testStr').value = ex.s;
+      $('examplesMenu').classList.remove('open');
+      rebuild();
+    });
+  });
+}
+
+// ---------- Инициализация ----------
+function init() {
+  buildExamplesMenu();
+  $('pattern').addEventListener('input', debounce(rebuild, 250));
+  $('flags').addEventListener('input', debounce(rebuild, 250));
+  $('testStr').addEventListener('input', debounce(rebuild, 250));
+
+  $('btnReset').addEventListener('click', () => { stopPlay(); gotoStep(0); });
+  $('btnPrev').addEventListener('click', () => { stopPlay(); prevStep(); });
+  $('btnNext').addEventListener('click', () => { stopPlay(); nextStep(); });
+  $('btnEnd').addEventListener('click', () => { stopPlay(); gotoStep(STATE.steps.length - 1); });
+  $('btnPlay').addEventListener('click', togglePlay);
+  $('speed').addEventListener('input', (e) => { STATE.speed = parseInt(e.target.value); });
+  $('maxSteps').addEventListener('change', () => { rebuild(); });
+
+  initTimeline();
+
+  document.querySelectorAll('.subtab').forEach(b => {
+    b.addEventListener('click', () => switchTab(b.dataset.tab));
+  });
+
+  $('examplesBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    $('examplesMenu').classList.toggle('open');
+  });
+  document.addEventListener('click', () => $('examplesMenu').classList.remove('open'));
+
+  // Клик по строке шага в списках
+  document.body.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-step]');
+    if (row) {
+      stopPlay();
+      gotoStep(parseInt(row.dataset.step));
+    }
+  });
+
+  // Горячие клавиши
+  document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key === 'ArrowRight') { e.preventDefault(); stopPlay(); nextStep(); }
+    else if (e.key === 'ArrowLeft') { e.preventDefault(); stopPlay(); prevStep(); }
+    else if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+    else if (e.key === 'Home') { e.preventDefault(); stopPlay(); gotoStep(0); }
+    else if (e.key === 'End') { e.preventDefault(); stopPlay(); gotoStep(STATE.steps.length - 1); }
+  });
+
+  rebuild();
+}
+
+function debounce(fn, ms) {
+  let t;
+  return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+}
+
+document.addEventListener('DOMContentLoaded', init);
+
+</script>
+</body>
+</html>
